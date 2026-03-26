@@ -8,7 +8,6 @@ use http::{
 use snafu::ResultExt;
 use tracing::error;
 use wreq::RequestBuilder;
-use wreq_util::Emulation;
 
 use crate::{
     claude_web_state::SUPER_CLIENT,
@@ -71,7 +70,7 @@ impl ClaudeCodeState {
         state.cookie_header_value = header_value.clone();
         let mut client = wreq::Client::builder()
             .cookie_store(true)
-            .emulation(Emulation::Chrome136);
+            .emulation(crate::config::random_emulation());
         if let Some(ref proxy) = state.proxy {
             client = client.proxy(proxy.to_owned());
         }
@@ -129,7 +128,7 @@ impl ClaudeCodeState {
         self.endpoint = CLEWDR_CONFIG.load().endpoint();
         let mut client = wreq::Client::builder()
             .cookie_store(true)
-            .emulation(Emulation::Chrome136);
+            .emulation(crate::config::random_emulation());
         if let Some(ref proxy) = self.proxy {
             client = client.proxy(proxy.to_owned());
         }

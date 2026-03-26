@@ -1,5 +1,4 @@
 use colored::Colorize;
-use futures::TryFutureExt;
 use serde_json::json;
 use snafu::ResultExt;
 use tracing::{Instrument, debug, error, info, info_span, warn};
@@ -44,13 +43,19 @@ impl ClaudeWebState {
             let p = p.to_owned();
 
             let cookie = state.request_cookie().await?;
-            // check if request is successful
-            let web_res = async { state.bootstrap().await.and(state.send_chat(p).await) };
-            let transform_res = web_res
-                .and_then(async |r| self.transform_response(r).await)
-                .instrument(info_span!("claude_web", "cookie" = cookie.cookie.ellipse()));
+            // execute bootstrap, send chat, and transform response all on `state`
+            // (previously transform_response was called on `self`, causing usage
+            // tracking and token counting to silently fail because `self` lacked
+            // the cookie/last_params populated by request_cookie/send_chat)
+            let result = async {
+                state.bootstrap().await?;
+                let r = state.send_chat(p).await?;
+                state.transform_response(r).await
+            }
+            .instrument(info_span!("claude_web", "cookie" = cookie.cookie.ellipse()))
+            .await;
 
-            match transform_res.await {
+            match result {
                 Ok(b) => {
                     if let Err(e) = state.clean_chat().await {
                         warn!("Failed to clean chat: {}", e);

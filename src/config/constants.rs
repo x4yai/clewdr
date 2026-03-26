@@ -141,3 +141,25 @@ pub const fn default_skip_cool_down() -> bool {
 
 /// Default cookie value for testing purposes
 pub const PLACEHOLDER_COOKIE: &str = "sk-ant-sidXX----------------------------SET_YOUR_COOKIE_HERE----------------------------------------AAAAAAAA";
+
+/// Available browser emulation profiles (Chromium-family only)
+const EMULATIONS: &[wreq_util::Emulation] = &[
+    wreq_util::Emulation::Chrome136,
+    wreq_util::Emulation::Chrome131,
+    wreq_util::Emulation::Edge127,
+];
+
+/// Select a random browser emulation profile from the Chromium family.
+/// Used to diversify TLS/UA/header fingerprints across clients.
+pub fn random_emulation() -> wreq_util::Emulation {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    // deterministic per-thread seed to keep per-cookie consistency within a session
+    let mut h = DefaultHasher::new();
+    std::thread::current().id().hash(&mut h);
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
+        .hash(&mut h);
+    EMULATIONS[h.finish() as usize % EMULATIONS.len()]
+}

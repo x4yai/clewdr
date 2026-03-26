@@ -11,7 +11,6 @@ use wreq::{
     Client, Method, Proxy, RequestBuilder,
     header::{ORIGIN, REFERER},
 };
-use wreq_util::Emulation;
 
 use crate::{
     config::{CLAUDE_ENDPOINT, CLEWDR_CONFIG, CookieStatus, Reason},
@@ -24,8 +23,13 @@ use crate::{
 pub mod bootstrap;
 pub mod chat;
 mod transform;
-/// Placeholder
-pub static SUPER_CLIENT: LazyLock<Client> = LazyLock::new(Client::new);
+/// Default HTTP client with browser emulation (used as initial client before request_cookie)
+pub static SUPER_CLIENT: LazyLock<Client> = LazyLock::new(|| {
+    Client::builder()
+        .emulation(crate::config::random_emulation())
+        .build()
+        .unwrap_or_else(|_| Client::new())
+});
 
 /// State of current connection
 #[derive(Clone)]
@@ -128,7 +132,7 @@ impl ClaudeWebState {
         self.endpoint = CLEWDR_CONFIG.load().endpoint();
         let mut client = Client::builder()
             .cookie_store(true)
-            .emulation(Emulation::Chrome136);
+            .emulation(crate::config::random_emulation());
         if let Some(ref proxy) = self.proxy {
             client = client.proxy(proxy.to_owned());
         }
