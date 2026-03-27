@@ -37,3 +37,4 @@ Round 1: 13 个方案 → Round 2: 5 个 → Round 3: +1 P0 bug → Round 4: 收
 | [fingerprint_analysis_methodology.md](fingerprint_analysis_methodology.md) | 客户端指纹差异分析方法论：如何发现 clewdr 与真实 Claude Code 客户端的特征差异 |
 | [fingerprint_fix_plan.md](fingerprint_fix_plan.md) | 指纹差异修复方案：8 项差异的分析和修复计划 |
 | [api_parameter_changes.md](api_parameter_changes.md) | API 参数不兼容变更：thinking adaptive、compaction_delta 等 |
+| [version_upgrade_impact.md](version_upgrade_impact.md) | 版本升级影响分析：缓存命中、OAuth Token、序列化兼容性 |
