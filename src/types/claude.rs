@@ -952,6 +952,8 @@ pub enum ContentBlockDelta {
     ThinkingDelta { thinking: String },
     #[serde(rename = "signature_delta")]
     SignatureDelta { signature: String },
+    #[serde(rename = "compaction_delta")]
+    CompactionDelta { content: String },
 }
 
 #[derive(Debug, Deserialize, Serialize, Default)]
