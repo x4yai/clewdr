@@ -24,8 +24,14 @@
 Round 1: 13 个方案 → Round 2: 5 个 → Round 3: +1 P0 bug → Round 4: 收敛 → Round 5: 6 共识 + 2 分歧
 ```
 
-## P0 Bug（立即修复）
+## P0 Bug（已修复）
 
 `src/claude_web_state/chat.rs` 第 50 行：`self.transform_response(r)` → `state.transform_response(r)`
 
 导致 claude_web 路径下 **usage 统计和 token 计数完全失效**。
+
+## 指纹分析
+
+| 文件 | 内容 |
+|------|------|
+| [fingerprint_analysis_methodology.md](fingerprint_analysis_methodology.md) | 客户端指纹差异分析方法论：如何发现 clewdr 与真实 Claude Code 客户端的特征差异 |
