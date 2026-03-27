@@ -131,7 +131,7 @@ fn claude_code_billing_header(messages: &[Message]) -> String {
     let entrypoint = env::var(CLAUDE_CODE_ENTRYPOINT_ENV)
         .ok()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "cli".to_string());
+        .unwrap_or_else(|| "unknown".to_string());
 
     format!(
         "x-anthropic-billing-header: cc_version={CLAUDE_CODE_VERSION}.{}; cc_entrypoint={entrypoint}; cch=00000;",
@@ -424,7 +424,7 @@ mod tests {
 
         assert_eq!(
             claude_code_billing_header(&messages),
-            "x-anthropic-billing-header: cc_version=2.1.76.4dc; cc_entrypoint=cli; cch=00000;"
+            "x-anthropic-billing-header: cc_version=2.1.84.76b; cc_entrypoint=unknown; cch=00000;"
         );
     }
 
@@ -449,7 +449,7 @@ mod tests {
 
         assert_eq!(
             claude_code_billing_header(&messages),
-            "x-anthropic-billing-header: cc_version=2.1.76.540; cc_entrypoint=cli; cch=00000;"
+            "x-anthropic-billing-header: cc_version=2.1.84.652; cc_entrypoint=unknown; cch=00000;"
         );
     }
 

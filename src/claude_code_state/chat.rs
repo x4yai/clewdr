@@ -20,7 +20,11 @@ use crate::{
     types::claude::{CountMessageTokensResponse, CreateMessageParams},
 };
 
-pub(super) const CLAUDE_BETA_BASE: &str = "oauth-2025-04-20";
+/// Beta flag for Claude Code message requests (NOT the same as OAuth beta)
+pub(super) const CLAUDE_BETA_BASE: &str = "claude-code-20250219";
+/// OAuth-specific beta flag, used only in token exchange flows
+pub(super) const CLAUDE_BETA_OAUTH: &str = "oauth-2025-04-20";
+const CLAUDE_BETA_INTERLEAVED_THINKING: &str = "interleaved-thinking-2025-05-14";
 const CLAUDE_BETA_CONTEXT_1M_TOKEN: &str = "context-1m-2025-08-07";
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 pub(super) const CLAUDE_API_VERSION: &str = "2023-06-01";
@@ -256,7 +260,7 @@ impl ClaudeCodeState {
             .bearer_auth(access_token)
             .header(ACCEPT, "application/json, text/plain, */*")
             .header(USER_AGENT, CLAUDE_CODE_USER_AGENT)
-            .header("anthropic-beta", CLAUDE_BETA_BASE)
+            .header("anthropic-beta", CLAUDE_BETA_OAUTH)
             .send()
             .await
             .context(WreqSnafu {
@@ -607,6 +611,7 @@ impl ClaudeCodeState {
         };
 
         push(CLAUDE_BETA_BASE);
+        push(CLAUDE_BETA_INTERLEAVED_THINKING);
         if use_context_1m {
             push(CLAUDE_BETA_CONTEXT_1M_TOKEN);
         }

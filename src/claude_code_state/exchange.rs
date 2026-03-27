@@ -27,7 +27,7 @@ use crate::{
     error::{CheckClaudeErr, ClewdrError, UnexpectedNoneSnafu, UrlSnafu, WreqSnafu},
 };
 
-use super::chat::{CLAUDE_API_VERSION, CLAUDE_BETA_BASE};
+use super::chat::{CLAUDE_API_VERSION, CLAUDE_BETA_OAUTH};
 
 type ClaudeOauthClient = Client<
     BasicErrorResponse,
@@ -60,7 +60,7 @@ impl<'c> AsyncHttpClient<'c> for OauthClient {
             );
             headers.insert(
                 HeaderName::from_static("anthropic-beta"),
-                HeaderValue::from_static(CLAUDE_BETA_BASE),
+                HeaderValue::from_static(CLAUDE_BETA_OAUTH),
             );
         }
 

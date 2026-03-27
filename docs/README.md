@@ -35,3 +35,4 @@ Round 1: 13 个方案 → Round 2: 5 个 → Round 3: +1 P0 bug → Round 4: 收
 | 文件 | 内容 |
 |------|------|
 | [fingerprint_analysis_methodology.md](fingerprint_analysis_methodology.md) | 客户端指纹差异分析方法论：如何发现 clewdr 与真实 Claude Code 客户端的特征差异 |
+| [fingerprint_fix_plan.md](fingerprint_fix_plan.md) | 指纹差异修复方案：8 项差异的分析和修复计划 |
