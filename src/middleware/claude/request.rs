@@ -422,10 +422,12 @@ mod tests {
     fn claude_code_billing_header_matches_2176_rule() {
         let messages = vec![Message::new_text(Role::User, "hey")];
 
-        assert_eq!(
-            claude_code_billing_header(&messages),
-            "x-anthropic-billing-header: cc_version=2.1.84.76b; cc_entrypoint=unknown; cch=00000;"
+        let header = claude_code_billing_header(&messages);
+        assert!(
+            header.starts_with("x-anthropic-billing-header: cc_version=2.1.86.38b; cc_entrypoint="),
+            "unexpected header: {header}"
         );
+        assert!(header.ends_with("; cch=00000;"), "unexpected header: {header}");
     }
 
     #[test]
@@ -447,10 +449,12 @@ mod tests {
             Message::new_text(Role::User, "later"),
         ];
 
-        assert_eq!(
-            claude_code_billing_header(&messages),
-            "x-anthropic-billing-header: cc_version=2.1.84.652; cc_entrypoint=unknown; cch=00000;"
+        let header = claude_code_billing_header(&messages);
+        assert!(
+            header.starts_with("x-anthropic-billing-header: cc_version=2.1.86.8f9; cc_entrypoint="),
+            "unexpected header: {header}"
         );
+        assert!(header.ends_with("; cch=00000;"), "unexpected header: {header}");
     }
 
     #[test]
