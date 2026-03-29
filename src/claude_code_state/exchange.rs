@@ -72,21 +72,58 @@ impl<'c> AsyncHttpClient<'c> for OauthClient {
             }
             let response = req.body(body).send().await.map_err(Box::new)?;
 
-            let mut builder = http::Response::builder().status(response.status());
+            let status = response.status();
+            let version = response.version();
+            let headers: Vec<_> = response
+                .headers()
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            let body_bytes = response.bytes().await.map_err(Box::new)?.to_vec();
 
-            {
-                builder = builder.version(response.version());
-            }
+            // Claude's token endpoint returns non-standard error format:
+            //   {"error": {"type": "...", "message": "..."}}
+            // but the oauth2 crate expects standard OAuth2 error format:
+            //   {"error": "...", "error_description": "..."}
+            // Transform the response so the oauth2 crate can parse it.
+            let final_body = if !status.is_success() {
+                normalize_oauth_error(&body_bytes).unwrap_or(body_bytes)
+            } else {
+                body_bytes
+            };
 
-            for (name, value) in response.headers().iter() {
+            let mut builder = http::Response::builder()
+                .status(status)
+                .version(version);
+            for (name, value) in headers {
                 builder = builder.header(name, value);
             }
 
             builder
-                .body(response.bytes().await.map_err(Box::new)?.to_vec())
+                .body(final_body)
                 .map_err(HttpClientError::Http)
         })
     }
+}
+
+/// Transforms Claude's non-standard OAuth error response into standard OAuth2 format.
+///
+/// Claude returns: `{"error": {"type": "rate_limit_error", "message": "..."}}`
+/// OAuth2 expects: `{"error": "rate_limit_error", "error_description": "..."}`
+fn normalize_oauth_error(body: &[u8]) -> Option<Vec<u8>> {
+    let parsed: Value = serde_json::from_slice(body).ok()?;
+    let error_obj = parsed.get("error")?;
+    // Only transform if "error" is an object (Claude's format), not a string (standard format)
+    if !error_obj.is_object() {
+        return None;
+    }
+    let error_type = error_obj.get("type")?.as_str()?;
+    let message = error_obj.get("message")?.as_str().unwrap_or("");
+    let normalized = serde_json::json!({
+        "error": error_type,
+        "error_description": message
+    });
+    serde_json::to_vec(&normalized).ok()
 }
 
 pub struct ExchangeResult {

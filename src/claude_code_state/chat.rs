@@ -102,10 +102,21 @@ impl ClaudeCodeState {
                         state.cookie.as_ref().unwrap().cookie.ellipse().green(),
                         e
                     );
-                    // 429 error
+                    // 429 error from Claude API
                     if let ClewdrError::InvalidCookie { reason } = e {
                         state.return_cookie(Some(reason.to_owned())).await;
                         continue;
+                    }
+                    // Rate limit from OAuth token endpoint — cool down the cookie
+                    // and stop retrying (the rate limit is typically IP-based and
+                    // lasts ~30 min on Cloudflare, so retrying won't help).
+                    if Self::is_token_rate_limited(&e) {
+                        warn!("OAuth token endpoint rate limited, cooling down cookie for 30 min");
+                        let cooldown = chrono::Utc::now().timestamp() + 1800; // 30 min
+                        state
+                            .return_cookie(Some(crate::config::Reason::TooManyRequest(cooldown)))
+                            .await;
+                        return Err(e);
                     }
                     return Err(e);
                 }
@@ -341,6 +352,14 @@ impl ClaudeCodeState {
                     if let ClewdrError::InvalidCookie { reason } = e {
                         state.return_cookie(Some(reason.to_owned())).await;
                         continue;
+                    }
+                    if Self::is_token_rate_limited(&e) {
+                        warn!("OAuth token endpoint rate limited (count_tokens), cooling down cookie for 30 min");
+                        let cooldown = chrono::Utc::now().timestamp() + 1800;
+                        state
+                            .return_cookie(Some(crate::config::Reason::TooManyRequest(cooldown)))
+                            .await;
+                        return Err(e);
                     }
                     return Err(e);
                 }
@@ -611,6 +630,7 @@ impl ClaudeCodeState {
         };
 
         push(CLAUDE_BETA_BASE);
+        push(CLAUDE_BETA_OAUTH);
         push(CLAUDE_BETA_INTERLEAVED_THINKING);
         if use_context_1m {
             push(CLAUDE_BETA_CONTEXT_1M_TOKEN);
@@ -837,6 +857,16 @@ impl ClaudeCodeState {
                 403 => !Self::is_context_1m_forbidden(error),
                 _ => false,
             };
+        }
+        false
+    }
+
+    /// Checks whether the error originated from a rate-limited OAuth token endpoint.
+    fn is_token_rate_limited(error: &ClewdrError) -> bool {
+        if let ClewdrError::RequestTokenError { source, .. } = error {
+            // After normalize_oauth_error, "rate_limit_error" becomes a ServerResponse
+            let msg = source.to_string().to_ascii_lowercase();
+            return msg.contains("rate_limit") || msg.contains("rate limit");
         }
         false
     }
