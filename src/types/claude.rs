@@ -1003,6 +1003,75 @@ mod tests {
         assert_eq!(reserialized["tools"][1]["type"], "text_editor_20250124");
     }
 
+    /// Verify JSON key serialization order matches real Claude Code CLI:
+    /// model → max_tokens → messages → system → stream → temperature → ...
+    #[test]
+    fn json_field_order_matches_real_cli() {
+        let params = CreateMessageParams {
+            model: "claude-sonnet-4-6".into(),
+            max_tokens: 8192,
+            messages: vec![Message::new_text(Role::User, "hello")],
+            system: Some(json!("you are helpful")),
+            stream: Some(true),
+            temperature: Some(0.7),
+            ..Default::default()
+        };
+
+        let json_str = serde_json::to_string(&params).unwrap();
+
+        // Verify key ordering by finding positions
+        let model_pos = json_str.find("\"model\"").unwrap();
+        let max_tokens_pos = json_str.find("\"max_tokens\"").unwrap();
+        let messages_pos = json_str.find("\"messages\"").unwrap();
+        let system_pos = json_str.find("\"system\"").unwrap();
+        let stream_pos = json_str.find("\"stream\"").unwrap();
+        let temperature_pos = json_str.find("\"temperature\"").unwrap();
+
+        assert!(
+            model_pos < max_tokens_pos,
+            "model should come before max_tokens"
+        );
+        assert!(
+            max_tokens_pos < messages_pos,
+            "max_tokens should come before messages"
+        );
+        assert!(
+            messages_pos < system_pos,
+            "messages should come before system"
+        );
+        assert!(
+            system_pos < stream_pos,
+            "system should come before stream"
+        );
+        assert!(
+            stream_pos < temperature_pos,
+            "stream should come before temperature"
+        );
+    }
+
+    /// Verify that content block array format round-trips correctly
+    #[test]
+    fn content_blocks_serialize_as_array() {
+        let msg = Message::new_blocks(Role::User, vec![ContentBlock::text("hello")]);
+        let json = serde_json::to_value(&msg).unwrap();
+
+        // Must be an array, not a bare string
+        assert!(json["content"].is_array(), "content must serialize as array");
+        assert_eq!(json["content"][0]["type"], "text");
+        assert_eq!(json["content"][0]["text"], "hello");
+    }
+
+    /// Verify that bare string content can be deserialized and is distinct from blocks
+    #[test]
+    fn bare_string_content_deserializes_as_text_variant() {
+        let json = json!({"role": "user", "content": "hello"});
+        let msg: Message = serde_json::from_value(json).unwrap();
+        assert!(
+            matches!(msg.content, MessageContent::Text { .. }),
+            "bare string should deserialize as Text variant"
+        );
+    }
+
     #[test]
     fn deserializes_tool_choice_string_auto() {
         let body = json!({

@@ -476,6 +476,39 @@ mod tests {
     }
 
     #[test]
+    fn normalize_content_converts_bare_strings_to_blocks() {
+        let mut body = CreateMessageParams {
+            model: "claude-sonnet-4-6".to_string(),
+            messages: vec![
+                // bare string content (as from OpenAI conversion)
+                Message::new_text(Role::User, "hello"),
+                // already block format (should be unchanged)
+                Message::new_blocks(Role::Assistant, vec![ContentBlock::text("world")]),
+            ],
+            ..Default::default()
+        };
+
+        normalize_content_to_blocks(&mut body);
+
+        // Both messages should now be Blocks variant
+        for (i, msg) in body.messages.iter().enumerate() {
+            assert!(
+                matches!(msg.content, MessageContent::Blocks { .. }),
+                "message {i} should be Blocks after normalization"
+            );
+        }
+
+        // Verify serialized output uses array format
+        let json = serde_json::to_value(&body).unwrap();
+        assert!(
+            json["messages"][0]["content"].is_array(),
+            "user message content must be array"
+        );
+        assert_eq!(json["messages"][0]["content"][0]["type"], "text");
+        assert_eq!(json["messages"][0]["content"][0]["text"], "hello");
+    }
+
+    #[test]
     fn prepend_system_blocks_keeps_billing_before_custom_system() {
         let mut body = CreateMessageParams {
             messages: vec![Message::new_text(Role::User, "hey")],
