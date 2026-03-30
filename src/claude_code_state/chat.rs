@@ -555,19 +555,22 @@ impl ClaudeCodeState {
                         osum.fetch_add(u.output_tokens as u64, Ordering::Relaxed);
                     }
                     crate::types::claude::StreamEvent::MessageStop => {
-                        // on stream completion, persist totals and release slot
+                        // on stream completion, release slot immediately, then persist usage in background
                         if let (Some(cookie), handle) = (cookie.clone(), handle.clone()) {
                             let total_out = osum.load(Ordering::Relaxed);
                             let mut c = cookie.clone();
                             let cookie_id = c.cookie.clone();
+                            let release_handle = handle.clone();
+                            // Release concurrency slot FIRST so next request can proceed
                             tokio::spawn(async move {
-                                // Update period boundaries if needed, then accumulate
+                                let _ = release_handle.release_slot(cookie_id).await;
+                            });
+                            // Then persist usage stats in background (may involve HTTP calls)
+                            tokio::spawn(async move {
                                 ClaudeCodeState::update_cookie_boundaries_if_due(&mut c, &handle)
                                     .await;
                                 c.add_and_bucket_usage(input_tokens, total_out, family);
                                 let _ = handle.return_cookie(c, None).await;
-                                // Release the concurrency slot now that stream is done
-                                let _ = handle.release_slot(cookie_id).await;
                             });
                         }
                     }

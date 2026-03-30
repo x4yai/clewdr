@@ -112,7 +112,11 @@ impl ClaudeWebState {
                     let e = if let Some(retry) = event.retry { e.retry(retry) } else { e };
                     yield e.data(event.data);
                 }
-                // on end of stream, compute output tokens and persist totals
+                // Release concurrency slot FIRST so next request can proceed immediately
+                if let Some(c) = cookie.as_ref() {
+                    let _ = handle.release_slot(c.cookie.clone()).await;
+                }
+                // Then compute output tokens and persist totals
                 if !acc.is_empty() {
                     // Prefer official count_tokens if enabled and possible; else estimate locally
                     let mut out = None;
@@ -146,8 +150,6 @@ impl ClaudeWebState {
                             .unwrap_or(crate::config::ModelFamily::Other);
                         c.add_and_bucket_usage(input_tokens, out, family);
                         let _ = handle.return_cookie(c.clone(), None).await;
-                        // Stream done: release concurrency slot
-                        let _ = handle.release_slot(c.cookie.clone()).await;
                     }
                 } else if let Some(mut c) = cookie.clone() {
                     // still persist input tokens to maintain parity
@@ -167,8 +169,6 @@ impl ClaudeWebState {
                         .unwrap_or(crate::config::ModelFamily::Other);
                     c.add_and_bucket_usage(input_tokens, 0, family);
                     let _ = handle.return_cookie(c.clone(), None).await;
-                    // Stream done: release concurrency slot
-                    let _ = handle.release_slot(c.cookie.clone()).await;
                 }
             };
             // normalize error type for axum SSE
