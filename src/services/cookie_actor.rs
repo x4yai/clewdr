@@ -565,6 +565,7 @@ impl CookieActorHandle {
         let start = std::time::Instant::now();
         let mut interval = tokio::time::interval(std::time::Duration::from_millis(500));
         interval.tick().await; // first tick is immediate
+        let mut logged_waiting = false;
 
         loop {
             let result = ractor::call!(
@@ -580,13 +581,21 @@ impl CookieActorHandle {
             })?;
 
             match result {
-                Ok(cookie) => return Ok(cookie),
+                Ok(cookie) => {
+                    if logged_waiting {
+                        info!(
+                            "Cookie became available after {:.1}s",
+                            start.elapsed().as_secs_f64()
+                        );
+                    }
+                    return Ok(cookie);
+                }
                 // All cookies busy (at concurrency limit) — wait and retry
                 Err(ClewdrError::AllCookiesBusy) if start.elapsed() < timeout => {
-                    warn!(
-                        "All cookies at concurrency limit, waiting... ({:.1}s elapsed)",
-                        start.elapsed().as_secs_f64()
-                    );
+                    if !logged_waiting {
+                        warn!("All cookies at concurrency limit, waiting...");
+                        logged_waiting = true;
+                    }
                     interval.tick().await;
                     continue;
                 }
