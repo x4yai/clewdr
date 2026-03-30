@@ -24,7 +24,8 @@ use crate::{
     Args,
     config::{
         CC_CLIENT_ID, CookieStatus, UselessCookie, default_check_update, default_ip,
-        default_max_retries, default_port, default_skip_cool_down, default_use_real_roles,
+        default_max_concurrent_per_cookie, default_max_retries, default_port,
+        default_skip_cool_down, default_use_real_roles,
     },
     error::ClewdrError,
     utils::enabled,
@@ -89,6 +90,14 @@ pub struct ClewdrConfig {
     // Api settings, can hot reload
     #[serde(default = "default_max_retries")]
     pub max_retries: usize,
+    #[serde(default = "default_max_concurrent_per_cookie")]
+    pub max_concurrent_per_cookie: usize,
+    /// Minimum delay in milliseconds between requests per cookie (0 = no delay)
+    #[serde(default)]
+    pub request_delay_ms: u64,
+    /// Random jitter range in milliseconds added to request_delay_ms (0 = no jitter)
+    #[serde(default)]
+    pub request_jitter_ms: u64,
     #[serde(default)]
     pub preserve_chats: bool,
     #[serde(default)]
@@ -137,6 +146,9 @@ impl Default for ClewdrConfig {
     fn default() -> Self {
         Self {
             max_retries: default_max_retries(),
+            max_concurrent_per_cookie: default_max_concurrent_per_cookie(),
+            request_delay_ms: 0,
+            request_jitter_ms: 0,
             check_update: default_check_update(),
             auto_update: false,
             cookie_array: HashSet::new(),

@@ -1,4 +1,4 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use chrono::Utc;
 use colored::Colorize;
@@ -9,7 +9,10 @@ use snafu::{GenerateImplicitData, Location};
 use tracing::{error, info, warn};
 
 use crate::{
-    config::{CLEWDR_CONFIG, ClewdrConfig, CookieStatus, Reason, UsageBreakdown, UselessCookie},
+    config::{
+        CLEWDR_CONFIG, ClewdrConfig, ClewdrCookie, CookieStatus, Reason, UsageBreakdown,
+        UselessCookie,
+    },
     error::ClewdrError,
 };
 
@@ -22,6 +25,8 @@ pub struct CookieStatusInfo {
     pub valid: Vec<CookieStatus>,
     pub exhausted: Vec<CookieStatus>,
     pub invalid: Vec<UselessCookie>,
+    /// Number of concurrent requests currently using each cookie
+    pub in_use_counts: HashMap<String, usize>,
 }
 
 /// Messages that the CookieActor can handle
@@ -41,6 +46,8 @@ enum CookieActorMessage {
     Delete(CookieStatus, RpcReplyPort<Result<(), ClewdrError>>),
     /// Update 1M support flags on an existing cookie
     Update1mSupport(CookieStatus, RpcReplyPort<Result<(), ClewdrError>>),
+    /// Release a concurrency slot for a cookie (without returning/updating it)
+    ReleaseSlot(ClewdrCookie),
 }
 
 /// CookieActor state - manages collections of cookies
@@ -50,6 +57,8 @@ struct CookieActorState {
     exhausted: HashSet<CookieStatus>,
     invalid: HashSet<UselessCookie>,
     moka: Cache<u64, CookieStatus>,
+    /// Tracks how many concurrent requests are using each cookie
+    in_use: HashMap<ClewdrCookie, usize>,
 }
 
 /// Cookie actor that handles cookie distribution, collection, and status tracking using Ractor
@@ -181,41 +190,76 @@ impl CookieActor {
         changed
     }
 
-    /// Dispatches a cookie for use
+    /// Dispatches a cookie for use, respecting per-cookie concurrency limits
     fn dispatch(
         &self,
         state: &mut CookieActorState,
         hash: Option<u64>,
     ) -> Result<CookieStatus, ClewdrError> {
         Self::reset(state);
+        let max_concurrent = CLEWDR_CONFIG.load().max_concurrent_per_cookie.max(1);
+
+        // Try moka cache first (hash-based affinity)
         if let Some(hash) = hash
             && let Some(cookie) = state.moka.get(&hash)
             && let Some(cookie) = state.valid.iter().find(|&c| c == &cookie)
         {
-            // renew moka cache
-            state.moka.insert(hash, cookie.clone());
-            return Ok(cookie.clone());
+            let current = state.in_use.get(&cookie.cookie).copied().unwrap_or(0);
+            if current < max_concurrent {
+                *state.in_use.entry(cookie.cookie.clone()).or_insert(0) += 1;
+                state.moka.insert(hash, cookie.clone());
+                return Ok(cookie.clone());
+            }
         }
-        let cookie = state
-            .valid
-            .pop_front()
-            .ok_or(ClewdrError::NoCookieAvailable)?;
-        state.valid.push_back(cookie.clone());
-        if let Some(hash) = hash {
-            state.moka.insert(hash, cookie.clone());
+
+        // Round-robin: find first cookie under concurrency limit
+        for i in 0..state.valid.len() {
+            let cookie = &state.valid[i];
+            let current = state.in_use.get(&cookie.cookie).copied().unwrap_or(0);
+            if current < max_concurrent {
+                let cookie = state.valid[i].clone();
+                *state.in_use.entry(cookie.cookie.clone()).or_insert(0) += 1;
+                // Rotate: move used cookie to back for fairness
+                if state.valid.len() > 1 {
+                    state.valid.remove(i);
+                    state.valid.push_back(cookie.clone());
+                }
+                if let Some(hash) = hash {
+                    state.moka.insert(hash, cookie.clone());
+                }
+                return Ok(cookie);
+            }
         }
-        Ok(cookie)
+
+        Err(ClewdrError::NoCookieAvailable)
     }
 
-    /// Collects a returned cookie and processes it based on the return reason
+    /// Decrements the in-use counter for a cookie
+    fn release_cookie(state: &mut CookieActorState, cookie: &CookieStatus) {
+        if let Some(count) = state.in_use.get_mut(&cookie.cookie) {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                state.in_use.remove(&cookie.cookie);
+            }
+        }
+    }
+
+    /// Collects a returned cookie and processes it based on the return reason.
+    /// Note: `reason=None` is a data-only update (e.g. usage stats) and does NOT
+    /// release the concurrency slot. Only `reason=Some(_)` releases the slot,
+    /// because it means the request is done with this cookie.
     fn collect(state: &mut CookieActorState, mut cookie: CookieStatus, reason: Option<Reason>) {
         let Some(reason) = reason else {
+            // Data-only update: do NOT release concurrency slot
             if let Some(existing) = state.valid.iter_mut().find(|c| **c == cookie) {
                 *existing = cookie;
                 Self::save(state);
             }
             return;
         };
+
+        // Request is done with this cookie — release concurrency slot
+        Self::release_cookie(state, &cookie);
         let mut find_remove = |cookie: &CookieStatus| {
             state.valid.retain(|c| c != cookie);
         };
@@ -289,6 +333,11 @@ impl CookieActor {
             valid: state.valid.clone().into(),
             exhausted: state.exhausted.iter().cloned().collect(),
             invalid: state.invalid.iter().cloned().collect(),
+            in_use_counts: state
+                .in_use
+                .iter()
+                .map(|(k, v)| (k.to_string(), *v))
+                .collect(),
         }
     }
 
@@ -399,6 +448,7 @@ impl Actor for CookieActor {
             exhausted,
             invalid,
             moka,
+            in_use: HashMap::new(),
         };
 
         CookieActor::log(&state);
@@ -444,6 +494,14 @@ impl Actor for CookieActor {
             CookieActorMessage::Update1mSupport(cookie, reply_port) => {
                 let result = Self::update_1m_support(state, cookie);
                 reply_port.send(result)?;
+            }
+            CookieActorMessage::ReleaseSlot(cookie_id) => {
+                if let Some(count) = state.in_use.get_mut(&cookie_id) {
+                    *count = count.saturating_sub(1);
+                    if *count == 0 {
+                        state.in_use.remove(&cookie_id);
+                    }
+                }
             }
         }
         Ok(())
@@ -493,14 +551,54 @@ impl CookieActorHandle {
         });
     }
 
-    /// Request a cookie from the cookie actor
+    /// Request a cookie from the cookie actor.
+    /// If all cookies are at their concurrency limit, waits and retries
+    /// up to `cookie_wait_timeout` seconds before giving up.
     pub async fn request(&self, cache_hash: Option<u64>) -> Result<CookieStatus, ClewdrError> {
-        ractor::call!(self.actor_ref, CookieActorMessage::Request, cache_hash).map_err(|e| {
-            ClewdrError::RactorError {
+        let timeout = std::time::Duration::from_secs(30);
+        let start = std::time::Instant::now();
+        let mut interval = tokio::time::interval(std::time::Duration::from_millis(500));
+        interval.tick().await; // first tick is immediate
+
+        loop {
+            let result = ractor::call!(
+                self.actor_ref,
+                CookieActorMessage::Request,
+                cache_hash
+            )
+            .map_err(|e| ClewdrError::RactorError {
                 loc: Location::generate(),
-                msg: format!("Failed to communicate with CookieActor for request operation: {e}"),
+                msg: format!(
+                    "Failed to communicate with CookieActor for request operation: {e}"
+                ),
+            })?;
+
+            match result {
+                Ok(cookie) => return Ok(cookie),
+                Err(ClewdrError::NoCookieAvailable) if start.elapsed() < timeout => {
+                    warn!(
+                        "All cookies at concurrency limit, waiting... ({:.1}s elapsed)",
+                        start.elapsed().as_secs_f64()
+                    );
+                    interval.tick().await;
+                    continue;
+                }
+                Err(e) => return Err(e),
             }
-        })?
+        }
+    }
+
+    /// Release a concurrency slot for a cookie.
+    /// Call this when a request is completely done (stream finished, error, etc.)
+    pub async fn release_slot(&self, cookie_id: ClewdrCookie) -> Result<(), ClewdrError> {
+        ractor::cast!(
+            self.actor_ref,
+            CookieActorMessage::ReleaseSlot(cookie_id)
+        )
+        .map_err(|e| ClewdrError::RactorError {
+            loc: Location::generate(),
+            msg: format!("Failed to communicate with CookieActor for release operation: {e}"),
+        })
     }
 
     /// Return a cookie to the cookie actor

@@ -139,6 +139,11 @@ pub const fn default_skip_cool_down() -> bool {
     true
 }
 
+/// Default max concurrent requests per cookie (1 = serial)
+pub const fn default_max_concurrent_per_cookie() -> usize {
+    1
+}
+
 /// Default cookie value for testing purposes
 pub const PLACEHOLDER_COOKIE: &str = "sk-ant-sidXX----------------------------SET_YOUR_COOKIE_HERE----------------------------------------AAAAAAAA";
 

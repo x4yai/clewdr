@@ -43,6 +43,27 @@ impl ClaudeWebState {
             let p = p.to_owned();
 
             let cookie = state.request_cookie().await?;
+
+            // Apply request delay + jitter to simulate natural request spacing
+            {
+                let config = CLEWDR_CONFIG.load();
+                let delay = config.request_delay_ms;
+                let jitter = config.request_jitter_ms;
+                if delay > 0 || jitter > 0 {
+                    let jitter_val = if jitter > 0 {
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .subsec_nanos() as u64
+                            % jitter
+                    } else {
+                        0
+                    };
+                    let total = std::time::Duration::from_millis(delay + jitter_val);
+                    tokio::time::sleep(total).await;
+                }
+            }
+
             // execute bootstrap, send chat, and transform response all on `state`
             // (previously transform_response was called on `self`, causing usage
             // tracking and token counting to silently fail because `self` lacked
@@ -60,6 +81,16 @@ impl ClaudeWebState {
                     if let Err(e) = state.clean_chat().await {
                         warn!("Failed to clean chat: {}", e);
                     }
+                    // For non-streaming responses, release slot now.
+                    // For streaming, slot is released in the stream completion handler.
+                    if !state.stream {
+                        if let Some(cookie) = &state.cookie {
+                            let _ = state
+                                .cookie_actor_handle
+                                .release_slot(cookie.cookie.clone())
+                                .await;
+                        }
+                    }
                     return Ok(b);
                 }
                 Err(e) => {
@@ -68,10 +99,17 @@ impl ClaudeWebState {
                         warn!("Failed to clean chat: {}", e);
                     }
                     error!("{e}");
-                    // 429 error
+                    // 429 error — return_cookie(Some) releases the slot
                     if let ClewdrError::InvalidCookie { reason } = e {
                         state.return_cookie(Some(reason.to_owned())).await;
                         continue;
+                    }
+                    // Other errors: release slot manually
+                    if let Some(cookie) = &state.cookie {
+                        let _ = state
+                            .cookie_actor_handle
+                            .release_slot(cookie.cookie.clone())
+                            .await;
                     }
                     return Err(e);
                 }

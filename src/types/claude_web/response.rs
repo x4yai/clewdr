@@ -145,7 +145,9 @@ impl ClaudeWebState {
                             })
                             .unwrap_or(crate::config::ModelFamily::Other);
                         c.add_and_bucket_usage(input_tokens, out, family);
-                        let _ = handle.return_cookie(c, None).await;
+                        let _ = handle.return_cookie(c.clone(), None).await;
+                        // Stream done: release concurrency slot
+                        let _ = handle.release_slot(c.cookie.clone()).await;
                     }
                 } else if let Some(mut c) = cookie.clone() {
                     // still persist input tokens to maintain parity
@@ -164,7 +166,9 @@ impl ClaudeWebState {
                         })
                         .unwrap_or(crate::config::ModelFamily::Other);
                     c.add_and_bucket_usage(input_tokens, 0, family);
-                    let _ = handle.return_cookie(c, None).await;
+                    let _ = handle.return_cookie(c.clone(), None).await;
+                    // Stream done: release concurrency slot
+                    let _ = handle.release_slot(c.cookie.clone()).await;
                 }
             };
             // normalize error type for axum SSE

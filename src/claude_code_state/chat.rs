@@ -60,6 +60,27 @@ impl ClaudeCodeState {
             let p = p.to_owned();
 
             let cookie = state.request_cookie().await?;
+
+            // Apply request delay + jitter to simulate natural request spacing
+            {
+                let config = CLEWDR_CONFIG.load();
+                let delay = config.request_delay_ms;
+                let jitter = config.request_jitter_ms;
+                if delay > 0 || jitter > 0 {
+                    let jitter_val = if jitter > 0 {
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .subsec_nanos() as u64
+                            % jitter
+                    } else {
+                        0
+                    };
+                    let total = std::time::Duration::from_millis(delay + jitter_val);
+                    tokio::time::sleep(total).await;
+                }
+            }
+
             let retry = async {
                 match state.check_token() {
                     TokenStatus::None => {
@@ -117,6 +138,13 @@ impl ClaudeCodeState {
                             .return_cookie(Some(crate::config::Reason::TooManyRequest(cooldown)))
                             .await;
                         return Err(e);
+                    }
+                    // Other errors: release the concurrency slot before returning
+                    if let Some(cookie) = &state.cookie {
+                        let _ = state
+                            .cookie_actor_handle
+                            .release_slot(cookie.cookie.clone())
+                            .await;
                     }
                     return Err(e);
                 }
@@ -305,6 +333,13 @@ impl ClaudeCodeState {
                 if cookie_disallows {
                     state.persist_count_tokens_allowed(false).await;
                 }
+                // Early return: release the slot
+                if let Some(cookie) = &state.cookie {
+                    let _ = state
+                        .cookie_actor_handle
+                        .release_slot(cookie.cookie.clone())
+                        .await;
+                }
                 return Ok(Self::local_count_tokens_response(&p));
             }
             let retry = async {
@@ -341,6 +376,13 @@ impl ClaudeCodeState {
             ));
             match retry.await {
                 Ok(res) => {
+                    // count_tokens is non-streaming, release slot
+                    if let Some(cookie) = &state.cookie {
+                        let _ = state
+                            .cookie_actor_handle
+                            .release_slot(cookie.cookie.clone())
+                            .await;
+                    }
                     return Ok(res);
                 }
                 Err(e) => {
@@ -360,6 +402,13 @@ impl ClaudeCodeState {
                             .return_cookie(Some(crate::config::Reason::TooManyRequest(cooldown)))
                             .await;
                         return Err(e);
+                    }
+                    // Other errors: release slot
+                    if let Some(cookie) = &state.cookie {
+                        let _ = state
+                            .cookie_actor_handle
+                            .release_slot(cookie.cookie.clone())
+                            .await;
                     }
                     return Err(e);
                 }
@@ -451,6 +500,13 @@ impl ClaudeCodeState {
             let (resp, usage_pair) = Self::materialize_non_stream_response(response).await?;
             let (input, output) = usage_pair.unwrap_or((self.usage.input_tokens as u64, 0));
             self.persist_usage_totals(input, output, model_family).await;
+            // Non-streaming: request is done, release the concurrency slot
+            if let Some(cookie) = &self.cookie {
+                let _ = self
+                    .cookie_actor_handle
+                    .release_slot(cookie.cookie.clone())
+                    .await;
+            }
             Ok(resp)
         } else {
             // Stream pass-through while accumulating output token usage from message_delta events
@@ -499,16 +555,19 @@ impl ClaudeCodeState {
                         osum.fetch_add(u.output_tokens as u64, Ordering::Relaxed);
                     }
                     crate::types::claude::StreamEvent::MessageStop => {
-                        // on stream completion, persist totals asynchronously
+                        // on stream completion, persist totals and release slot
                         if let (Some(cookie), handle) = (cookie.clone(), handle.clone()) {
                             let total_out = osum.load(Ordering::Relaxed);
                             let mut c = cookie.clone();
+                            let cookie_id = c.cookie.clone();
                             tokio::spawn(async move {
                                 // Update period boundaries if needed, then accumulate
                                 ClaudeCodeState::update_cookie_boundaries_if_due(&mut c, &handle)
                                     .await;
                                 c.add_and_bucket_usage(input_tokens, total_out, family);
                                 let _ = handle.return_cookie(c, None).await;
+                                // Release the concurrency slot now that stream is done
+                                let _ = handle.release_slot(cookie_id).await;
                             });
                         }
                     }
