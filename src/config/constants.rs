@@ -144,6 +144,11 @@ pub const fn default_max_concurrent_per_cookie() -> usize {
     1
 }
 
+/// Default cookie wait timeout in seconds when all cookies are busy
+pub const fn default_cookie_wait_timeout() -> u64 {
+    30
+}
+
 /// Default cookie value for testing purposes
 pub const PLACEHOLDER_COOKIE: &str = "sk-ant-sidXX----------------------------SET_YOUR_COOKIE_HERE----------------------------------------AAAAAAAA";
 

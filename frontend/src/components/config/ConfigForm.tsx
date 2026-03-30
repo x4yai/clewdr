@@ -117,6 +117,42 @@ const ConfigForm: React.FC<ConfigFormProps> = ({ config, onChange }) => {
             onChange={onChange}
             label={t("config.sections.api.maxRetries")}
           />
+
+          <FormInput
+            id="max_concurrent_per_cookie"
+            name="max_concurrent_per_cookie"
+            type="number"
+            value={config.max_concurrent_per_cookie.toString()}
+            onChange={onChange}
+            label={t("config.sections.api.maxConcurrentPerCookie")}
+          />
+
+          <FormInput
+            id="cookie_wait_timeout"
+            name="cookie_wait_timeout"
+            type="number"
+            value={config.cookie_wait_timeout.toString()}
+            onChange={onChange}
+            label={t("config.sections.api.cookieWaitTimeout")}
+          />
+
+          <FormInput
+            id="request_delay_ms"
+            name="request_delay_ms"
+            type="number"
+            value={config.request_delay_ms.toString()}
+            onChange={onChange}
+            label={t("config.sections.api.requestDelayMs")}
+          />
+
+          <FormInput
+            id="request_jitter_ms"
+            name="request_jitter_ms"
+            type="number"
+            value={config.request_jitter_ms.toString()}
+            onChange={onChange}
+            label={t("config.sections.api.requestJitterMs")}
+          />
         </div>
         <div className="grid grid-cols-2 gap-x-6 gap-y-3">
           <ConfigCheckbox

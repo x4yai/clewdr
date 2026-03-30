@@ -17,6 +17,10 @@ export interface ConfigData {
 
   // API settings
   max_retries: number;
+  max_concurrent_per_cookie: number;
+  cookie_wait_timeout: number;
+  request_delay_ms: number;
+  request_jitter_ms: number;
   preserve_chats: boolean;
   web_search: boolean;
   enable_web_count_tokens: boolean;

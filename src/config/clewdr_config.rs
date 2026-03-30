@@ -24,7 +24,8 @@ use crate::{
     Args,
     config::{
         CC_CLIENT_ID, CookieStatus, UselessCookie, default_check_update, default_ip,
-        default_max_concurrent_per_cookie, default_max_retries, default_port,
+        default_cookie_wait_timeout, default_max_concurrent_per_cookie, default_max_retries,
+        default_port,
         default_skip_cool_down, default_use_real_roles,
     },
     error::ClewdrError,
@@ -92,6 +93,9 @@ pub struct ClewdrConfig {
     pub max_retries: usize,
     #[serde(default = "default_max_concurrent_per_cookie")]
     pub max_concurrent_per_cookie: usize,
+    /// Timeout in seconds for waiting when all cookies are at concurrency limit (0 = fail immediately)
+    #[serde(default = "default_cookie_wait_timeout")]
+    pub cookie_wait_timeout: u64,
     /// Minimum delay in milliseconds between requests per cookie (0 = no delay)
     #[serde(default)]
     pub request_delay_ms: u64,
@@ -152,6 +156,7 @@ impl Default for ClewdrConfig {
         Self {
             max_retries: default_max_retries(),
             max_concurrent_per_cookie: default_max_concurrent_per_cookie(),
+            cookie_wait_timeout: default_cookie_wait_timeout(),
             request_delay_ms: 0,
             request_jitter_ms: 0,
             check_update: default_check_update(),

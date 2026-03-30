@@ -561,7 +561,8 @@ impl CookieActorHandle {
     /// If all cookies are at their concurrency limit, waits and retries
     /// up to `cookie_wait_timeout` seconds before giving up.
     pub async fn request(&self, cache_hash: Option<u64>) -> Result<CookieStatus, ClewdrError> {
-        let timeout = std::time::Duration::from_secs(30);
+        let timeout_secs = CLEWDR_CONFIG.load().cookie_wait_timeout;
+        let timeout = std::time::Duration::from_secs(timeout_secs);
         let start = std::time::Instant::now();
         let mut interval = tokio::time::interval(std::time::Duration::from_millis(500));
         interval.tick().await; // first tick is immediate

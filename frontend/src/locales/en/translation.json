@@ -149,6 +149,10 @@
       "api": {
         "title": "API Settings",
         "maxRetries": "Max Retries",
+        "maxConcurrentPerCookie": "Max Concurrent Per Cookie",
+        "cookieWaitTimeout": "Cookie Wait Timeout (s)",
+        "requestDelayMs": "Request Delay (ms)",
+        "requestJitterMs": "Request Jitter (ms)",
         "preserveChats": "Preserve Chats",
         "webSearch": "Web Search",
         "webCountTokens": "Enable web count_tokens",

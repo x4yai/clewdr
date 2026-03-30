@@ -149,6 +149,10 @@
       "api": {
         "title": "API设置",
         "maxRetries": "最大重试次数",
+        "maxConcurrentPerCookie": "单Cookie最大并发数",
+        "cookieWaitTimeout": "Cookie等待超时（秒）",
+        "requestDelayMs": "请求延迟（毫秒）",
+        "requestJitterMs": "请求抖动（毫秒）",
         "preserveChats": "保留聊天",
         "webSearch": "网页搜索",
         "webCountTokens": "允许 Web 渠道调用 count_tokens",
