@@ -139,6 +139,22 @@ fn claude_code_billing_header(messages: &[Message]) -> String {
     )
 }
 
+/// Normalize all message content to content-block array format.
+///
+/// The real Claude Code CLI always sends `"content": [{"type":"text","text":"..."}]`,
+/// never plain `"content": "..."`. After OpenAI-to-Claude conversion via model-family,
+/// content may arrive as a bare string. This normalisation ensures the outgoing JSON
+/// matches the real CLI wire format.
+fn normalize_content_to_blocks(body: &mut CreateMessageParams) {
+    for msg in &mut body.messages {
+        if let MessageContent::Text { content } = &msg.content {
+            msg.content = MessageContent::Blocks {
+                content: vec![ContentBlock::text(content.clone())],
+            };
+        }
+    }
+}
+
 fn drop_empty_system(body: &mut CreateMessageParams) {
     let Some(system) = body.system.take() else {
         return;
@@ -276,6 +292,8 @@ where
             // Trim whitespace and drop empty assistant turns when enabled.
             body.messages = sanitize_messages(body.messages);
         }
+        // Ensure all message content uses block-array format (matches real CLI wire format)
+        normalize_content_to_blocks(&mut body);
         if body.model.ends_with("-thinking") {
             body.model = body.model.trim_end_matches("-thinking").to_string();
             body.thinking.get_or_insert(Thinking::new(4096));

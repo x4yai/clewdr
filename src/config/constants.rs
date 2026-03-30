@@ -147,11 +147,25 @@ pub const fn default_max_concurrent_per_cookie() -> usize {
 /// Default cookie value for testing purposes
 pub const PLACEHOLDER_COOKIE: &str = "sk-ant-sidXX----------------------------SET_YOUR_COOKIE_HERE----------------------------------------AAAAAAAA";
 
-/// Available browser emulation profiles (Chromium-family only)
+/// Available browser emulation profiles for Claude Web mode.
+/// Diversified across Chrome/Safari/Edge/Firefox to reduce TLS fingerprint clustering.
 const EMULATIONS: &[wreq_util::Emulation] = &[
+    // Chrome (latest + recent)
+    wreq_util::Emulation::Chrome145,
+    wreq_util::Emulation::Chrome139,
     wreq_util::Emulation::Chrome136,
+    wreq_util::Emulation::Chrome133,
     wreq_util::Emulation::Chrome131,
-    wreq_util::Emulation::Edge127,
+    // Safari
+    wreq_util::Emulation::Safari26,
+    wreq_util::Emulation::Safari18_2,
+    wreq_util::Emulation::Safari18,
+    // Edge
+    wreq_util::Emulation::Edge145,
+    wreq_util::Emulation::Edge131,
+    // Firefox
+    wreq_util::Emulation::Firefox147,
+    wreq_util::Emulation::Firefox136,
 ];
 
 /// Select a random browser emulation profile from the Chromium family.

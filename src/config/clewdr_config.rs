@@ -136,6 +136,11 @@ pub struct ClewdrConfig {
     pub claude_code_client_id: Option<String>,
     #[serde(default)]
     pub custom_system: Option<String>,
+    /// Whether Claude Code mode uses browser TLS emulation.
+    /// false (default) = use plain TLS (avoids UA vs TLS fingerprint mismatch).
+    /// true = use random browser emulation (same as Claude Web mode).
+    #[serde(default)]
+    pub code_browser_emulation: bool,
 
     // Skip field, can hot reload
     #[serde(skip)]
@@ -176,6 +181,7 @@ impl Default for ClewdrConfig {
             skip_normal_pro: false,
             claude_code_client_id: None,
             custom_system: None,
+            code_browser_emulation: false,
             no_fs: false,
             log_to_file: false,
         }

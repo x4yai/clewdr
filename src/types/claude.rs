@@ -57,17 +57,53 @@ pub struct McpServer {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_configuration: Option<serde_json::Value>,
 }
-/// Parameters for creating a message
+/// Parameters for creating a message.
+///
+/// Field order matches the real Claude Code CLI serialization order
+/// (model → max_tokens → messages → system → stream → temperature → …)
+/// so that serde produces JSON keys in the same sequence.
 #[serde_as]
 #[derive(Debug, Deserialize, Serialize, Default, Clone)]
 pub struct CreateMessageParams {
+    /// Model to use
+    pub model: String,
     /// Maximum number of tokens to generate
     #[serde(default = "default_max_tokens")]
     pub max_tokens: u32,
     /// Input messages for the conversation
     pub messages: Vec<Message>,
-    /// Model to use
-    pub model: String,
+    /// System prompt
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system: Option<serde_json::Value>,
+    /// Whether to stream the response
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream: Option<bool>,
+    /// Temperature for response generation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
+    /// Top-k sampling
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_k: Option<u32>,
+    /// Top-p sampling
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<f32>,
+    /// Thinking mode configuration
+    #[serde(default)]
+    #[serde_as(deserialize_as = "DefaultOnError")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<Thinking>,
+    /// Tools that the model may use
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<Tool>>,
+    /// How the model should use tools
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_choice: Option<ToolChoice>,
+    /// Custom stop sequences
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_sequences: Option<Vec<String>>,
+    /// Request metadata
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Metadata>,
     /// Container identifier or definition
     #[serde(skip_serializing_if = "Option::is_none")]
     pub container: Option<serde_json::Value>,
@@ -77,38 +113,6 @@ pub struct CreateMessageParams {
     /// MCP servers to be utilized in this request
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mcp_servers: Option<Vec<McpServer>>,
-    /// System prompt
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub system: Option<serde_json::Value>,
-    /// Temperature for response generation
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub temperature: Option<f32>,
-    /// Custom stop sequences
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub stop_sequences: Option<Vec<String>>,
-    /// Whether to stream the response
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub stream: Option<bool>,
-    /// Thinking mode configuration
-    #[serde(default)]
-    #[serde_as(deserialize_as = "DefaultOnError")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub thinking: Option<Thinking>,
-    /// Top-k sampling
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub top_k: Option<u32>,
-    /// Top-p sampling
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub top_p: Option<f32>,
-    /// Tools that the model may use
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<Tool>>,
-    /// How the model should use tools
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_choice: Option<ToolChoice>,
-    /// Request metadata
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<Metadata>,
     /// Output configuration (effort hints)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_config: Option<OutputConfig>,

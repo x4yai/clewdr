@@ -68,9 +68,10 @@ impl ClaudeCodeState {
             .to_string();
         let header_value = HeaderValue::from_str(cookie_value.as_str())?;
         state.cookie_header_value = header_value.clone();
-        let mut client = wreq::Client::builder()
-            .cookie_store(true)
-            .emulation(crate::config::random_emulation());
+        let mut client = wreq::Client::builder().cookie_store(true);
+        if CLEWDR_CONFIG.load().code_browser_emulation {
+            client = client.emulation(crate::config::random_emulation());
+        }
         if let Some(ref proxy) = state.proxy {
             client = client.proxy(proxy.to_owned());
         }
@@ -126,9 +127,10 @@ impl ClaudeCodeState {
         // Always pull latest proxy/endpoint before building the client
         self.proxy = CLEWDR_CONFIG.load().wreq_proxy.to_owned();
         self.endpoint = CLEWDR_CONFIG.load().endpoint();
-        let mut client = wreq::Client::builder()
-            .cookie_store(true)
-            .emulation(crate::config::random_emulation());
+        let mut client = wreq::Client::builder().cookie_store(true);
+        if CLEWDR_CONFIG.load().code_browser_emulation {
+            client = client.emulation(crate::config::random_emulation());
+        }
         if let Some(ref proxy) = self.proxy {
             client = client.proxy(proxy.to_owned());
         }

@@ -212,6 +212,11 @@ impl CookieActor {
             }
         }
 
+        // No valid cookies at all — don't wait, fail immediately
+        if state.valid.is_empty() {
+            return Err(ClewdrError::NoCookieAvailable);
+        }
+
         // Round-robin: find first cookie under concurrency limit
         for i in 0..state.valid.len() {
             let cookie = &state.valid[i];
@@ -231,7 +236,8 @@ impl CookieActor {
             }
         }
 
-        Err(ClewdrError::NoCookieAvailable)
+        // Valid cookies exist but all at concurrency limit — caller should wait
+        Err(ClewdrError::AllCookiesBusy)
     }
 
     /// Decrements the in-use counter for a cookie
@@ -575,13 +581,19 @@ impl CookieActorHandle {
 
             match result {
                 Ok(cookie) => return Ok(cookie),
-                Err(ClewdrError::NoCookieAvailable) if start.elapsed() < timeout => {
+                // All cookies busy (at concurrency limit) — wait and retry
+                Err(ClewdrError::AllCookiesBusy) if start.elapsed() < timeout => {
                     warn!(
                         "All cookies at concurrency limit, waiting... ({:.1}s elapsed)",
                         start.elapsed().as_secs_f64()
                     );
                     interval.tick().await;
                     continue;
+                }
+                // No valid cookies at all (all exhausted/invalid) — fail immediately
+                Err(ClewdrError::NoCookieAvailable) => {
+                    error!("No valid cookies available (all exhausted or invalid)");
+                    return Err(ClewdrError::NoCookieAvailable);
                 }
                 Err(e) => return Err(e),
             }

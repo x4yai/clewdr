@@ -113,6 +113,8 @@ pub enum ClewdrError {
     CookieDispatchError { source: oneshot::error::RecvError },
     #[snafu(display("No cookie available"))]
     NoCookieAvailable,
+    #[snafu(display("All cookies are busy"))]
+    AllCookiesBusy,
     #[snafu(display("Invalid Cookie: {}", reason))]
     #[snafu(context(false))]
     InvalidCookie {
@@ -201,6 +203,9 @@ impl IntoResponse for ClewdrError {
             }
             ClewdrError::JsonRejection { ref source } => {
                 (source.status(), json!(source.body_text()))
+            }
+            ClewdrError::NoCookieAvailable | ClewdrError::AllCookiesBusy => {
+                (StatusCode::TOO_MANY_REQUESTS, json!(self.to_string()))
             }
             ClewdrError::TooManyRetries => (StatusCode::GATEWAY_TIMEOUT, json!(self.to_string())),
             ClewdrError::InvalidCookie { .. } => (StatusCode::BAD_REQUEST, json!(self.to_string())),
