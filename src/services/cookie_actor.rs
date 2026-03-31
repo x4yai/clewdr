@@ -610,6 +610,15 @@ impl CookieActorHandle {
         }
     }
 
+    /// Create a guard that automatically releases the concurrency slot when dropped.
+    /// Use this for streaming responses to prevent slot leaks on client disconnect or errors.
+    pub fn slot_guard(&self, cookie_id: ClewdrCookie) -> SlotGuard {
+        SlotGuard {
+            handle: self.clone(),
+            cookie_id: Some(cookie_id),
+        }
+    }
+
     /// Release a concurrency slot for a cookie.
     /// Call this when a request is completely done (stream finished, error, etc.)
     pub async fn release_slot(&self, cookie_id: ClewdrCookie) -> Result<(), ClewdrError> {
@@ -677,5 +686,30 @@ impl CookieActorHandle {
                 msg: format!("Failed to communicate with CookieActor for update operation: {e}"),
             }
         })?
+    }
+}
+
+/// RAII guard that releases a cookie's concurrency slot when dropped.
+/// Prevents slot leaks on client disconnect, stream errors, or panics.
+pub struct SlotGuard {
+    handle: CookieActorHandle,
+    cookie_id: Option<ClewdrCookie>,
+}
+
+impl SlotGuard {
+    /// Manually disarm the guard (slot was already released elsewhere).
+    pub fn disarm(&mut self) {
+        self.cookie_id = None;
+    }
+}
+
+impl Drop for SlotGuard {
+    fn drop(&mut self) {
+        if let Some(cookie_id) = self.cookie_id.take() {
+            let handle = self.handle.clone();
+            tokio::spawn(async move {
+                let _ = handle.release_slot(cookie_id).await;
+            });
+        }
     }
 }

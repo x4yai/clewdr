@@ -1,4 +1,8 @@
 use std::collections::HashSet;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::{Context, Poll};
 
 use axum::{
     Json,
@@ -6,7 +10,7 @@ use axum::{
 };
 use colored::Colorize;
 use eventsource_stream::Eventsource;
-use futures::TryStreamExt;
+use futures::{Stream, TryStreamExt};
 use http::header::{ACCEPT, USER_AGENT};
 use snafu::{GenerateImplicitData, ResultExt};
 use tracing::{Instrument, error, info, warn};
@@ -16,9 +20,37 @@ use crate::{
     claude_code_state::{ClaudeCodeState, TokenStatus},
     config::{CLAUDE_CODE_USER_AGENT, CLEWDR_CONFIG, Claude1mChannel, ModelFamily},
     error::{CheckClaudeErr, ClewdrError, WreqSnafu},
-    services::cookie_actor::CookieActorHandle,
+    services::cookie_actor::{CookieActorHandle, SlotGuard},
     types::claude::{CountMessageTokensResponse, CreateMessageParams},
 };
+
+/// Stream wrapper that holds a SlotGuard, releasing the concurrency slot
+/// when the stream is dropped (client disconnect, error, etc.)
+struct GuardedStream<S> {
+    inner: S,
+    _guard: Option<SlotGuard>,
+    released: Arc<AtomicBool>,
+}
+
+impl<S> Drop for GuardedStream<S> {
+    fn drop(&mut self) {
+        // If MessageStop already released the slot, disarm the guard
+        if self.released.load(Ordering::Acquire) {
+            if let Some(guard) = self._guard.as_mut() {
+                guard.disarm();
+            }
+        }
+        // Otherwise, the guard's own Drop will release the slot
+    }
+}
+
+impl<S: Stream + Unpin> Stream for GuardedStream<S> {
+    type Item = S::Item;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Pin::new(&mut self.inner).poll_next(cx)
+    }
+}
 
 /// Beta flag for Claude Code message requests (NOT the same as OAuth beta)
 pub(super) const CLAUDE_BETA_BASE: &str = "claude-code-20250219";
@@ -536,13 +568,21 @@ impl ClaudeCodeState {
     ) -> Result<axum::response::Response, ClewdrError> {
         use std::sync::{
             Arc,
-            atomic::{AtomicU64, Ordering},
+            atomic::{AtomicBool, AtomicU64, Ordering},
         };
 
         let input_tokens = self.usage.input_tokens as u64;
         let output_sum = Arc::new(AtomicU64::new(0));
         let handle = self.cookie_actor_handle.clone();
         let cookie = self.cookie.clone();
+
+        // Track whether MessageStop already released the slot
+        let slot_released = Arc::new(AtomicBool::new(false));
+        let slot_released_clone = slot_released.clone();
+
+        // Create a slot guard as a safety net for client disconnect / stream errors.
+        // If MessageStop fires normally, we disarm this via the AtomicBool.
+        let _slot_guard = cookie.as_ref().map(|c| handle.slot_guard(c.cookie.clone()));
 
         let osum = output_sum.clone();
         let stream = response.bytes_stream().eventsource().map_ok(move |event| {
@@ -555,6 +595,8 @@ impl ClaudeCodeState {
                         osum.fetch_add(u.output_tokens as u64, Ordering::Relaxed);
                     }
                     crate::types::claude::StreamEvent::MessageStop => {
+                        // Mark slot as released so the guard won't double-release
+                        slot_released_clone.store(true, Ordering::Release);
                         // on stream completion, release slot immediately, then persist usage in background
                         if let (Some(cookie), handle) = (cookie.clone(), handle.clone()) {
                             let total_out = osum.load(Ordering::Relaxed);
@@ -587,7 +629,14 @@ impl ClaudeCodeState {
             e.data(event.data)
         });
 
-        Ok(Sse::new(stream)
+        // Wrap stream with the guard — when stream is dropped, guard fires if slot wasn't released
+        let guarded = GuardedStream {
+            inner: stream,
+            _guard: _slot_guard,
+            released: slot_released,
+        };
+
+        Ok(Sse::new(guarded)
             .keep_alive(Default::default())
             .into_response())
     }

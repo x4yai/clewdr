@@ -99,6 +99,9 @@ impl ClaudeWebState {
                 .bytes_stream()
                 .eventsource()
                 .map_err(axum::Error::new);
+            // Create a slot guard that will release the concurrency slot on drop
+            // (handles client disconnect, stream errors, etc.)
+            let mut _slot_guard = cookie.as_ref().map(|c| handle.slot_guard(c.cookie.clone()));
             let stream = try_stream! {
                 let mut acc = String::new();
                 #[derive(serde::Deserialize)]
@@ -112,7 +115,10 @@ impl ClaudeWebState {
                     let e = if let Some(retry) = event.retry { e.retry(retry) } else { e };
                     yield e.data(event.data);
                 }
-                // Release concurrency slot FIRST so next request can proceed immediately
+                // Normal completion: disarm the guard and release explicitly
+                if let Some(guard) = _slot_guard.as_mut() {
+                    guard.disarm();
+                }
                 if let Some(c) = cookie.as_ref() {
                     let _ = handle.release_slot(c.cookie.clone()).await;
                 }
