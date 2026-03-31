@@ -60,6 +60,8 @@ pub(super) const CLAUDE_BETA_BASE: &str = "claude-code-20250219";
 /// OAuth-specific beta flag, used only in token exchange flows
 pub(super) const CLAUDE_BETA_OAUTH: &str = "oauth-2025-04-20";
 const CLAUDE_BETA_INTERLEAVED_THINKING: &str = "interleaved-thinking-2025-05-14";
+const CLAUDE_BETA_CONTEXT_MANAGEMENT: &str = "context-management-2025-06-27";
+const CLAUDE_BETA_PROMPT_CACHING_SCOPE: &str = "prompt-caching-scope-2026-01-05";
 const CLAUDE_BETA_CONTEXT_1M_TOKEN: &str = "context-1m-2025-08-07";
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 pub(super) const CLAUDE_API_VERSION: &str = "2023-06-01";
@@ -285,17 +287,23 @@ impl ClaudeCodeState {
             self.anthropic_beta_header.as_deref(),
             use_context_1m,
         );
+        let mut url = self
+            .endpoint
+            .join("v1/messages")
+            .expect("Url parse error");
+        url.set_query(Some("beta=true"));
         self.client
-            .post(
-                self.endpoint
-                    .join("v1/messages")
-                    .expect("Url parse error")
-                    .to_string(),
-            )
+            .post(url.to_string())
             .bearer_auth(access_token)
+            .header(ACCEPT, "application/json")
             .header(USER_AGENT, CLAUDE_CODE_USER_AGENT)
             .header("anthropic-beta", beta_header)
             .header("anthropic-version", CLAUDE_API_VERSION)
+            .header(
+                "anthropic-dangerous-direct-browser-access",
+                "true",
+            )
+            .header("x-app", "cli")
             .header("x-stainless-lang", "js")
             .header("x-stainless-package-version", ANTHROPIC_SDK_VERSION)
             .header("x-stainless-os", stainless_os())
@@ -303,6 +311,7 @@ impl ClaudeCodeState {
             .header("x-stainless-runtime", "node")
             .header("x-stainless-runtime-version", STAINLESS_NODE_VERSION)
             .header("x-stainless-retry-count", "0")
+            .header("x-stainless-timeout", "600")
             .json(body)
             .send()
             .await
@@ -744,17 +753,23 @@ impl ClaudeCodeState {
             self.anthropic_beta_header.as_deref(),
             use_context_1m,
         );
+        let mut url = self
+            .endpoint
+            .join("v1/messages/count_tokens")
+            .expect("Url parse error");
+        url.set_query(Some("beta=true"));
         self.client
-            .post(
-                self.endpoint
-                    .join("v1/messages/count_tokens")
-                    .expect("Url parse error")
-                    .to_string(),
-            )
+            .post(url.to_string())
             .bearer_auth(access_token)
+            .header(ACCEPT, "application/json")
             .header(USER_AGENT, CLAUDE_CODE_USER_AGENT)
             .header("anthropic-beta", beta_header)
             .header("anthropic-version", CLAUDE_API_VERSION)
+            .header(
+                "anthropic-dangerous-direct-browser-access",
+                "true",
+            )
+            .header("x-app", "cli")
             .header("x-stainless-lang", "js")
             .header("x-stainless-package-version", ANTHROPIC_SDK_VERSION)
             .header("x-stainless-os", stainless_os())
@@ -762,6 +777,7 @@ impl ClaudeCodeState {
             .header("x-stainless-runtime", "node")
             .header("x-stainless-runtime-version", STAINLESS_NODE_VERSION)
             .header("x-stainless-retry-count", "0")
+            .header("x-stainless-timeout", "300")
             .json(body)
             .send()
             .await
@@ -792,6 +808,8 @@ impl ClaudeCodeState {
         push(CLAUDE_BETA_BASE);
         push(CLAUDE_BETA_OAUTH);
         push(CLAUDE_BETA_INTERLEAVED_THINKING);
+        push(CLAUDE_BETA_CONTEXT_MANAGEMENT);
+        push(CLAUDE_BETA_PROMPT_CACHING_SCOPE);
         if use_context_1m {
             push(CLAUDE_BETA_CONTEXT_1M_TOKEN);
         }

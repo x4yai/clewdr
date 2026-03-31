@@ -19,11 +19,11 @@ pub const CC_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 pub const CC_TOKEN_URL: &str = "https://api.anthropic.com/v1/oauth/token";
 pub const CC_REDIRECT_URI: &str = "https://console.anthropic.com/oauth/code/callback";
 pub const CLAUDE_CODE_VERSION: &str = "2.1.88";
-pub const CLAUDE_CODE_USER_AGENT: &str = "claude-code/2.1.88";
+pub const CLAUDE_CODE_USER_AGENT: &str = "claude-cli/2.1.88 (external, cli)";
 /// Anthropic SDK version to mimic in x-stainless-package-version header
-pub const ANTHROPIC_SDK_VERSION: &str = "0.80.0";
+pub const ANTHROPIC_SDK_VERSION: &str = "0.74.0";
 /// Node.js runtime version reported in x-stainless-runtime-version header
-pub const STAINLESS_NODE_VERSION: &str = "22.13.1";
+pub const STAINLESS_NODE_VERSION: &str = "v24.3.0";
 pub const CLAUDE_CODE_BILLING_SALT: &str = "59cf53e54c78";
 
 pub static ENDPOINT_URL: LazyLock<Url> = LazyLock::new(|| {

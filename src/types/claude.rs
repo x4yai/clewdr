@@ -60,21 +60,38 @@ pub struct McpServer {
 /// Parameters for creating a message.
 ///
 /// Field order matches the real Claude Code CLI serialization order
-/// (model → max_tokens → messages → system → stream → temperature → …)
+/// (model → messages → system → tools → metadata → max_tokens → thinking → context_management → stream)
 /// so that serde produces JSON keys in the same sequence.
 #[serde_as]
 #[derive(Debug, Deserialize, Serialize, Default, Clone)]
 pub struct CreateMessageParams {
     /// Model to use
     pub model: String,
-    /// Maximum number of tokens to generate
-    #[serde(default = "default_max_tokens")]
-    pub max_tokens: u32,
     /// Input messages for the conversation
     pub messages: Vec<Message>,
     /// System prompt
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system: Option<serde_json::Value>,
+    /// Tools that the model may use
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<Tool>>,
+    /// How the model should use tools
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_choice: Option<ToolChoice>,
+    /// Request metadata
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Metadata>,
+    /// Maximum number of tokens to generate
+    #[serde(default = "default_max_tokens")]
+    pub max_tokens: u32,
+    /// Thinking mode configuration
+    #[serde(default)]
+    #[serde_as(deserialize_as = "DefaultOnError")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<Thinking>,
+    /// Context management configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_management: Option<serde_json::Value>,
     /// Whether to stream the response
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
@@ -87,29 +104,12 @@ pub struct CreateMessageParams {
     /// Top-p sampling
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_p: Option<f32>,
-    /// Thinking mode configuration
-    #[serde(default)]
-    #[serde_as(deserialize_as = "DefaultOnError")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub thinking: Option<Thinking>,
-    /// Tools that the model may use
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<Tool>>,
-    /// How the model should use tools
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_choice: Option<ToolChoice>,
     /// Custom stop sequences
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_sequences: Option<Vec<String>>,
-    /// Request metadata
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<Metadata>,
     /// Container identifier or definition
     #[serde(skip_serializing_if = "Option::is_none")]
     pub container: Option<serde_json::Value>,
-    /// Context management configuration
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub context_management: Option<serde_json::Value>,
     /// MCP servers to be utilized in this request
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mcp_servers: Option<Vec<McpServer>>,
@@ -1019,29 +1019,30 @@ mod tests {
 
         let json_str = serde_json::to_string(&params).unwrap();
 
-        // Verify key ordering by finding positions
+        // Verify key ordering matches real Claude Code CLI:
+        // model → messages → system → ... → max_tokens → ... → stream → temperature
         let model_pos = json_str.find("\"model\"").unwrap();
-        let max_tokens_pos = json_str.find("\"max_tokens\"").unwrap();
         let messages_pos = json_str.find("\"messages\"").unwrap();
         let system_pos = json_str.find("\"system\"").unwrap();
+        let max_tokens_pos = json_str.find("\"max_tokens\"").unwrap();
         let stream_pos = json_str.find("\"stream\"").unwrap();
         let temperature_pos = json_str.find("\"temperature\"").unwrap();
 
         assert!(
-            model_pos < max_tokens_pos,
-            "model should come before max_tokens"
-        );
-        assert!(
-            max_tokens_pos < messages_pos,
-            "max_tokens should come before messages"
+            model_pos < messages_pos,
+            "model should come before messages"
         );
         assert!(
             messages_pos < system_pos,
             "messages should come before system"
         );
         assert!(
-            system_pos < stream_pos,
-            "system should come before stream"
+            system_pos < max_tokens_pos,
+            "system should come before max_tokens"
+        );
+        assert!(
+            max_tokens_pos < stream_pos,
+            "max_tokens should come before stream"
         );
         assert!(
             stream_pos < temperature_pos,
