@@ -92,6 +92,9 @@ pub struct CreateMessageParams {
     /// Context management configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_management: Option<serde_json::Value>,
+    /// Output configuration (effort hints) — placed before stream to match real CLI field order
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_config: Option<OutputConfig>,
     /// Whether to stream the response
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
@@ -113,9 +116,6 @@ pub struct CreateMessageParams {
     /// MCP servers to be utilized in this request
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mcp_servers: Option<Vec<McpServer>>,
-    /// Output configuration (effort hints)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub output_config: Option<OutputConfig>,
     /// Output format configuration (e.g. JSON schema)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_format: Option<OutputFormat>,

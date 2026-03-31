@@ -6,6 +6,8 @@ use std::{
     vec,
 };
 
+use uuid::Uuid;
+
 use axum::{
     Json,
     extract::{FromRequest, Request},
@@ -131,7 +133,7 @@ fn claude_code_billing_header(messages: &[Message]) -> String {
     let entrypoint = env::var(CLAUDE_CODE_ENTRYPOINT_ENV)
         .ok()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "unknown".to_string());
+        .unwrap_or_else(|| "cli".to_string());
 
     let cc_workload = env::var("CC_WORKLOAD")
         .ok()
@@ -141,10 +143,70 @@ fn claude_code_billing_header(messages: &[Message]) -> String {
         .map(|w| format!(" cc_workload={w};"))
         .unwrap_or_default();
 
+    // Generate dynamic cch: hash the first user message content and take 5 hex chars
+    let cch = {
+        let msg_text = first_user_message_text(messages);
+        let hash = Sha256::digest(format!("{CLAUDE_CODE_BILLING_SALT}{msg_text}"));
+        format!("{:x}", hash).chars().take(5).collect::<String>()
+    };
+
     format!(
-        "x-anthropic-billing-header: cc_version={CLAUDE_CODE_VERSION}.{};{workload_part} cc_entrypoint={entrypoint}; cch=00000;",
+        "x-anthropic-billing-header: cc_version={CLAUDE_CODE_VERSION}.{};{workload_part} cc_entrypoint={entrypoint}; cch={cch};",
         &version_hash[..3]
     )
+}
+
+/// Generate a stable device_id (SHA-256 hex) for the metadata.user_id field.
+/// Deterministic per machine based on hostname + username.
+fn generate_device_id() -> String {
+    static DEVICE_ID: LazyLock<String> = LazyLock::new(|| {
+        let hostname = env::var("HOSTNAME")
+            .or_else(|_| env::var("COMPUTERNAME"))
+            .or_else(|_| {
+                std::fs::read_to_string("/etc/hostname")
+                    .map(|s| s.trim().to_string())
+            })
+            .unwrap_or_else(|_| "unknown".to_string());
+        let user = env::var("USER")
+            .or_else(|_| env::var("USERNAME"))
+            .unwrap_or_else(|_| "unknown".to_string());
+        format!("{:x}", Sha256::digest(format!("{hostname}{user}")))
+    });
+    DEVICE_ID.clone()
+}
+
+/// Ensure the request body has a `metadata` field matching real CLI format.
+/// Real CLI sends: `{"user_id": "{\"device_id\":\"...\",\"account_uuid\":\"\",\"session_id\":\"...\"}"}`.
+fn ensure_metadata(body: &mut CreateMessageParams) {
+    if body.metadata.is_some() {
+        return;
+    }
+    let device_id = generate_device_id();
+    let session_id = Uuid::new_v4().to_string();
+    let user_id_json = serde_json::json!({
+        "device_id": device_id,
+        "account_uuid": "",
+        "session_id": session_id,
+    })
+    .to_string();
+    let mut fields = std::collections::HashMap::new();
+    fields.insert("user_id".to_string(), user_id_json);
+    body.metadata = Some(crate::types::claude::Metadata { fields });
+}
+
+/// Ensure the request body has a `context_management` field matching real CLI format.
+fn ensure_context_management(body: &mut CreateMessageParams) {
+    if body.context_management.is_some() {
+        return;
+    }
+    body.context_management = Some(json!({
+        "edits": [
+            {
+                "type": "clear_thinking_20251015",
+                "keep": "all"
+            }
+        ]
+    }));
 }
 
 /// Normalize all message content to content-block array format.
@@ -386,12 +448,19 @@ where
             return Err(ClewdrError::TestMessage);
         }
 
+        // Ensure metadata and context_management are present (real CLI always sends these)
+        ensure_metadata(&mut body);
+        ensure_context_management(&mut body);
+
         // Determine streaming status and API format
         let stream = body.stream.unwrap_or_default();
 
-        let mut system_prefixes = vec![ContentBlock::text(claude_code_billing_header(
-            &body.messages,
-        ))];
+        let mut system_prefixes = vec![
+            ContentBlock::text(claude_code_billing_header(&body.messages)),
+            ContentBlock::text(
+                "You are a Claude agent, built on Anthropic's Claude Agent SDK.".to_string(),
+            ),
+        ];
         if let Some(custom_system) = CLEWDR_CONFIG
             .load()
             .custom_system
@@ -453,7 +522,17 @@ mod tests {
             header.starts_with("x-anthropic-billing-header: cc_version=2.1.88.758; cc_entrypoint="),
             "unexpected header: {header}"
         );
-        assert!(header.ends_with("; cch=00000;"), "unexpected header: {header}");
+        // cch is now a dynamic 5-char hex hash, just verify the format
+        assert!(
+            header.contains("; cch=") && header.ends_with(';'),
+            "unexpected cch format in header: {header}"
+        );
+        let cch_part = header.split("cch=").nth(1).unwrap().trim_end_matches(';');
+        assert_eq!(cch_part.len(), 5, "cch should be 5 hex chars: {cch_part}");
+        assert!(
+            cch_part.chars().all(|c| c.is_ascii_hexdigit()),
+            "cch should be hex: {cch_part}"
+        );
     }
 
     #[test]
@@ -480,7 +559,9 @@ mod tests {
             header.starts_with("x-anthropic-billing-header: cc_version=2.1.88.3c1; cc_entrypoint="),
             "unexpected header: {header}"
         );
-        assert!(header.ends_with("; cch=00000;"), "unexpected header: {header}");
+        // cch is dynamic, verify format only
+        let cch_part = header.split("cch=").nth(1).unwrap().trim_end_matches(';');
+        assert_eq!(cch_part.len(), 5, "cch should be 5 hex chars: {cch_part}");
     }
 
     #[test]

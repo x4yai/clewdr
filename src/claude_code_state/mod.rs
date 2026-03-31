@@ -31,6 +31,8 @@ pub struct ClaudeCodeState {
     pub system_prompt_hash: Option<u64>,
     pub anthropic_beta_header: Option<String>,
     pub usage: Usage,
+    /// Session ID sent as `X-Claude-Code-Session-Id` header (UUID v4, stable per state instance)
+    pub session_id: String,
 }
 
 impl ClaudeCodeState {
@@ -48,6 +50,7 @@ impl ClaudeCodeState {
             system_prompt_hash: None,
             anthropic_beta_header: None,
             usage: Usage::default(),
+            session_id: uuid::Uuid::new_v4().to_string(),
         }
     }
 

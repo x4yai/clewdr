@@ -57,12 +57,14 @@ impl<S: Stream + Unpin> Stream for GuardedStream<S> {
 
 /// Beta flag for Claude Code message requests (NOT the same as OAuth beta)
 pub(super) const CLAUDE_BETA_BASE: &str = "claude-code-20250219";
-/// OAuth-specific beta flag, used only in token exchange flows
+/// OAuth-specific beta flag, included in message requests for cookie/OAuth auth
 pub(super) const CLAUDE_BETA_OAUTH: &str = "oauth-2025-04-20";
 const CLAUDE_BETA_INTERLEAVED_THINKING: &str = "interleaved-thinking-2025-05-14";
 const CLAUDE_BETA_CONTEXT_MANAGEMENT: &str = "context-management-2025-06-27";
 const CLAUDE_BETA_PROMPT_CACHING_SCOPE: &str = "prompt-caching-scope-2026-01-05";
 const CLAUDE_BETA_CONTEXT_1M_TOKEN: &str = "context-1m-2025-08-07";
+/// Effort beta flag, required when model supports output_config.effort (opus-4-6, sonnet-4-6)
+const CLAUDE_BETA_EFFORT: &str = "effort-2025-11-24";
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 pub(super) const CLAUDE_API_VERSION: &str = "2023-06-01";
 
@@ -283,9 +285,12 @@ impl ClaudeCodeState {
         body: &CreateMessageParams,
         use_context_1m: bool,
     ) -> Result<wreq::Response, ClewdrError> {
+        let is_cookie_auth = self.cookie.is_some();
         let beta_header = Self::merge_anthropic_beta_header(
             self.anthropic_beta_header.as_deref(),
             use_context_1m,
+            &body.model,
+            is_cookie_auth,
         );
         let mut url = self
             .endpoint
@@ -297,6 +302,7 @@ impl ClaudeCodeState {
             .bearer_auth(access_token)
             .header(ACCEPT, "application/json")
             .header(USER_AGENT, CLAUDE_CODE_USER_AGENT)
+            .header("X-Claude-Code-Session-Id", &self.session_id)
             .header("anthropic-beta", beta_header)
             .header("anthropic-version", CLAUDE_API_VERSION)
             .header(
@@ -749,9 +755,12 @@ impl ClaudeCodeState {
         body: &CreateMessageParams,
         use_context_1m: bool,
     ) -> Result<wreq::Response, ClewdrError> {
+        let is_cookie_auth = self.cookie.is_some();
         let beta_header = Self::merge_anthropic_beta_header(
             self.anthropic_beta_header.as_deref(),
             use_context_1m,
+            &body.model,
+            is_cookie_auth,
         );
         let mut url = self
             .endpoint
@@ -763,6 +772,7 @@ impl ClaudeCodeState {
             .bearer_auth(access_token)
             .header(ACCEPT, "application/json")
             .header(USER_AGENT, CLAUDE_CODE_USER_AGENT)
+            .header("X-Claude-Code-Session-Id", &self.session_id)
             .header("anthropic-beta", beta_header)
             .header("anthropic-version", CLAUDE_API_VERSION)
             .header(
@@ -788,7 +798,12 @@ impl ClaudeCodeState {
             .await
     }
 
-    fn merge_anthropic_beta_header(extra: Option<&str>, use_context_1m: bool) -> String {
+    fn merge_anthropic_beta_header(
+        extra: Option<&str>,
+        use_context_1m: bool,
+        model: &str,
+        is_cookie_auth: bool,
+    ) -> String {
         let mut seen = HashSet::new();
         let mut merged = Vec::new();
         let mut push = |token: &str| {
@@ -806,12 +821,19 @@ impl ClaudeCodeState {
         };
 
         push(CLAUDE_BETA_BASE);
-        push(CLAUDE_BETA_OAUTH);
+        // Real CLI includes oauth beta when using cookie/OAuth auth (isClaudeAISubscriber)
+        if is_cookie_auth {
+            push(CLAUDE_BETA_OAUTH);
+        }
         push(CLAUDE_BETA_INTERLEAVED_THINKING);
         push(CLAUDE_BETA_CONTEXT_MANAGEMENT);
         push(CLAUDE_BETA_PROMPT_CACHING_SCOPE);
         if use_context_1m {
             push(CLAUDE_BETA_CONTEXT_1M_TOKEN);
+        }
+        // effort beta for models that support output_config.effort (opus-4-6, sonnet-4-6)
+        if Self::model_supports_effort(model) {
+            push(CLAUDE_BETA_EFFORT);
         }
         if let Some(extra) = extra {
             for token in extra.split(',') {
@@ -819,6 +841,12 @@ impl ClaudeCodeState {
             }
         }
         merged.join(",")
+    }
+
+    /// Check if model supports the effort parameter (opus-4-6, sonnet-4-6)
+    fn model_supports_effort(model: &str) -> bool {
+        let m = model.to_ascii_lowercase();
+        m.contains("opus-4-6") || m.contains("sonnet-4-6")
     }
 
     fn auto_1m_probe_channel(model: &str) -> Option<Claude1mChannel> {
