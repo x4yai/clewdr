@@ -18,7 +18,10 @@ use wreq::Method;
 
 use crate::{
     claude_code_state::{ClaudeCodeState, TokenStatus},
-    config::{CLAUDE_CODE_USER_AGENT, CLEWDR_CONFIG, Claude1mChannel, ModelFamily},
+    config::{
+        ANTHROPIC_SDK_VERSION, CLAUDE_CODE_USER_AGENT, CLEWDR_CONFIG, Claude1mChannel,
+        ModelFamily, STAINLESS_NODE_VERSION,
+    },
     error::{CheckClaudeErr, ClewdrError, WreqSnafu},
     services::cookie_actor::{CookieActorHandle, SlotGuard},
     types::claude::{CountMessageTokensResponse, CreateMessageParams},
@@ -60,6 +63,32 @@ const CLAUDE_BETA_INTERLEAVED_THINKING: &str = "interleaved-thinking-2025-05-14"
 const CLAUDE_BETA_CONTEXT_1M_TOKEN: &str = "context-1m-2025-08-07";
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 pub(super) const CLAUDE_API_VERSION: &str = "2023-06-01";
+
+/// Return the OS name in the format used by the Stainless SDK.
+fn stainless_os() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "MacOS"
+    } else if cfg!(target_os = "linux") {
+        "Linux"
+    } else if cfg!(target_os = "windows") {
+        "Windows"
+    } else {
+        "Unknown"
+    }
+}
+
+/// Return the CPU architecture in the format used by the Stainless SDK.
+fn stainless_arch() -> &'static str {
+    if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else if cfg!(target_arch = "x86_64") {
+        "x64"
+    } else if cfg!(target_arch = "x86") {
+        "x32"
+    } else {
+        "unknown"
+    }
+}
 
 impl ClaudeCodeState {
     /// Attempts to send a chat message to Claude API with retry mechanism
@@ -267,6 +296,13 @@ impl ClaudeCodeState {
             .header(USER_AGENT, CLAUDE_CODE_USER_AGENT)
             .header("anthropic-beta", beta_header)
             .header("anthropic-version", CLAUDE_API_VERSION)
+            .header("x-stainless-lang", "js")
+            .header("x-stainless-package-version", ANTHROPIC_SDK_VERSION)
+            .header("x-stainless-os", stainless_os())
+            .header("x-stainless-arch", stainless_arch())
+            .header("x-stainless-runtime", "node")
+            .header("x-stainless-runtime-version", STAINLESS_NODE_VERSION)
+            .header("x-stainless-retry-count", "0")
             .json(body)
             .send()
             .await
@@ -332,6 +368,12 @@ impl ClaudeCodeState {
             .header(ACCEPT, "application/json, text/plain, */*")
             .header(USER_AGENT, CLAUDE_CODE_USER_AGENT)
             .header("anthropic-beta", CLAUDE_BETA_OAUTH)
+            .header("x-stainless-lang", "js")
+            .header("x-stainless-package-version", ANTHROPIC_SDK_VERSION)
+            .header("x-stainless-os", stainless_os())
+            .header("x-stainless-arch", stainless_arch())
+            .header("x-stainless-runtime", "node")
+            .header("x-stainless-runtime-version", STAINLESS_NODE_VERSION)
             .send()
             .await
             .context(WreqSnafu {
@@ -713,6 +755,13 @@ impl ClaudeCodeState {
             .header(USER_AGENT, CLAUDE_CODE_USER_AGENT)
             .header("anthropic-beta", beta_header)
             .header("anthropic-version", CLAUDE_API_VERSION)
+            .header("x-stainless-lang", "js")
+            .header("x-stainless-package-version", ANTHROPIC_SDK_VERSION)
+            .header("x-stainless-os", stainless_os())
+            .header("x-stainless-arch", stainless_arch())
+            .header("x-stainless-runtime", "node")
+            .header("x-stainless-runtime-version", STAINLESS_NODE_VERSION)
+            .header("x-stainless-retry-count", "0")
             .json(body)
             .send()
             .await

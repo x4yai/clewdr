@@ -133,8 +133,16 @@ fn claude_code_billing_header(messages: &[Message]) -> String {
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| "unknown".to_string());
 
+    let cc_workload = env::var("CC_WORKLOAD")
+        .ok()
+        .filter(|v| !v.trim().is_empty());
+    let workload_part = cc_workload
+        .as_deref()
+        .map(|w| format!(" cc_workload={w};"))
+        .unwrap_or_default();
+
     format!(
-        "x-anthropic-billing-header: cc_version={CLAUDE_CODE_VERSION}.{}; cc_entrypoint={entrypoint}; cch=00000;",
+        "x-anthropic-billing-header: cc_version={CLAUDE_CODE_VERSION}.{};{workload_part} cc_entrypoint={entrypoint}; cch=00000;",
         &version_hash[..3]
     )
 }
@@ -442,7 +450,7 @@ mod tests {
 
         let header = claude_code_billing_header(&messages);
         assert!(
-            header.starts_with("x-anthropic-billing-header: cc_version=2.1.86.38b; cc_entrypoint="),
+            header.starts_with("x-anthropic-billing-header: cc_version=2.1.88.758; cc_entrypoint="),
             "unexpected header: {header}"
         );
         assert!(header.ends_with("; cch=00000;"), "unexpected header: {header}");
@@ -469,7 +477,7 @@ mod tests {
 
         let header = claude_code_billing_header(&messages);
         assert!(
-            header.starts_with("x-anthropic-billing-header: cc_version=2.1.86.8f9; cc_entrypoint="),
+            header.starts_with("x-anthropic-billing-header: cc_version=2.1.88.3c1; cc_entrypoint="),
             "unexpected header: {header}"
         );
         assert!(header.ends_with("; cch=00000;"), "unexpected header: {header}");
